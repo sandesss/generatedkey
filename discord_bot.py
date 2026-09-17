@@ -1,4 +1,4 @@
-```python
+python
 import os
 import hashlib
 import random
@@ -215,4 +215,3 @@ if __name__ == "__main__":
     )
 
     client.run(DISCORD_TOKEN)
-```
