@@ -27,7 +27,7 @@ def keep_alive():
 # =====================
 # KEY GENERATOR
 # =====================
-SECRET_SALT = os.environ.get("SECRET_SALT")  # Sa Render env vars ito, HINDI sa code!
+SECRET_SALT = os.environ.get("SECRET_SALT")
 
 def generate_key():
     chars = string.ascii_uppercase + string.digits
@@ -41,11 +41,12 @@ def generate_key():
 # DISCORD BOT
 # =====================
 intents = discord.Intents.default()
+intents.message_content = True  # ← KAILANGAN ITO para gumana ang !genkey
+
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Ilagay ang iyong Discord User ID dito (pwede marami)
 ADMIN_IDS = [
-    1504729516742807623,  # <-- palitan ng iyong actual Discord ID
+    1550004507239256174  # ← palitan ng iyong Discord ID, walang comma kung isa lang
 ]
 
 @bot.event
@@ -54,13 +55,12 @@ async def on_ready():
 
 @bot.command(name='genkey')
 async def gen_key(ctx):
-    # Admin check
     if ctx.author.id not in ADMIN_IDS:
-        await ctx.send("❌ Wala kang permission na mag-generate ng key!")
+        await ctx.send("❌ Wala kang permission!")
         return
 
     if not SECRET_SALT:
-        await ctx.send("❌ SECRET_SALT hindi na-set sa server!")
+        await ctx.send("❌ SECRET_SALT hindi na-set!")
         return
 
     key = generate_key()
@@ -74,10 +74,10 @@ async def gen_key(ctx):
 
     try:
         await ctx.author.send(embed=embed)
-        await ctx.send("✅ Na-send na ang key sa iyong DM!", delete_after=5)
-        await ctx.message.delete()  # Para hindi makita ng iba ang command
+        await ctx.send("✅ Na-send na sa iyong DM!", delete_after=5)
+        await ctx.message.delete()
     except discord.Forbidden:
-        await ctx.send("❌ Hindi ko ma-DM ka. I-check ang iyong DM settings.")
+        await ctx.send("❌ Hindi kita ma-DM. I-check ang DM settings.")
 
 keep_alive()
 bot.run(os.environ.get("DISCORD_TOKEN"))
