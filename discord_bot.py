@@ -1,131 +1,83 @@
-import os
+# bot.py
+import discord
+from discord.ext import commands
+from flask import Flask
+from threading import Thread
 import hashlib
 import random
-import threading
-import logging
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import string
+import os
 
-import discord
-from discord import app_commands
+# =====================
+# FLASK KEEP-ALIVE
+# =====================
+app = Flask('')
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+@app.route('/')
+def home():
+    return 'VIPCHAETOS Bot is alive!'
 
-log = logging.getLogger("vipchaetos_bot")
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
 
-# ✅ FIX 1: Tamang env var name (may fallback kung "token" ang gamit mo sa Render)
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("token")
-SECRET_SALT = os.getenv("SECRET_SALT", "VIPCHAETOS_SECRET_KEY_2026")
+def keep_alive():
+    t = Thread(target=run_flask, daemon=True)
+    t.start()
 
-# ✅ FIX 2: Port para sa Render (auto-detect ng Render ang PORT env var)
-PORT = int(os.getenv("PORT", "10000"))
+# =====================
+# KEY GENERATOR
+# =====================
+SECRET_SALT = os.environ.get("SECRET_SALT")  # Sa Render env vars ito, HINDI sa code!
 
-TEST_GUILD_ID = 0
+def generate_key():
+    chars = string.ascii_uppercase + string.digits
+    b1 = ''.join(random.choices(chars, k=6))
+    b2 = ''.join(random.choices(chars, k=6))
+    raw = f"{b1}-{b2}-{SECRET_SALT}"
+    checksum = hashlib.md5(raw.encode()).hexdigest()[:4].upper()
+    return f"CLEAN-{b1}-{b2}-{checksum}"
 
+# =====================
+# DISCORD BOT
+# =====================
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-# ---------- Keep-alive HTTP server (para ma-detect ng Render ang port) ----------
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"Bot is alive")
+# Ilagay ang iyong Discord User ID dito (pwede marami)
+ADMIN_IDS = [
+    1504729516742807623,  # <-- palitan ng iyong actual Discord ID
+]
 
-    def log_message(self, fmt, *args):
-        pass  # huwag i-log ang mga health check
-
-
-def start_health_server():
-    try:
-        server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
-        t = threading.Thread(target=server.serve_forever, daemon=True)
-        t.start()
-        log.info(f"Health server running on port {PORT}")
-    except Exception:
-        log.exception("Failed to start health server")
-
-
-# ---------- Bot ----------
-class Bot(discord.Client):
-    def __init__(self):
-        intents = discord.Intents.default()
-        super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
-
-    async def setup_hook(self):
-        if TEST_GUILD_ID:
-            guild = discord.Object(id=TEST_GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            log.info(f"Synced to guild {TEST_GUILD_ID}")
-        else:
-            synced = await self.tree.sync()
-            log.info(f"Synced {len(synced)} global command(s)")
-
-
-client = Bot()
-
-
-@client.event
+@bot.event
 async def on_ready():
-    log.info(f"Logged in as {client.user} ({client.user.id})")
-    log.info(f"Connected to {len(client.guilds)} server(s)")
-    await client.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="for /generate"
-        )
+    print(f'✅ Bot online: {bot.user}')
+
+@bot.command(name='genkey')
+async def gen_key(ctx):
+    # Admin check
+    if ctx.author.id not in ADMIN_IDS:
+        await ctx.send("❌ Wala kang permission na mag-generate ng key!")
+        return
+
+    if not SECRET_SALT:
+        await ctx.send("❌ SECRET_SALT hindi na-set sa server!")
+        return
+
+    key = generate_key()
+
+    embed = discord.Embed(
+        title="🔑 License Key Generated",
+        description=f"||`{key}`||",
+        color=0x00f2fe
     )
+    embed.set_footer(text="VIPCHAETOS Neural Suite")
 
-
-@client.tree.command(name="generate", description="Gumawa ng License Key")
-async def generate(interaction: discord.Interaction):
-    log.info(f"/generate ni {interaction.user} ({interaction.user.id})")
     try:
-        await interaction.response.defer(thinking=True, ephemeral=True)
+        await ctx.author.send(embed=embed)
+        await ctx.send("✅ Na-send na ang key sa iyong DM!", delete_after=5)
+        await ctx.message.delete()  # Para hindi makita ng iba ang command
+    except discord.Forbidden:
+        await ctx.send("❌ Hindi ko ma-DM ka. I-check ang iyong DM settings.")
 
-        b1 = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=4))
-        b2 = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=4))
-
-        raw = f"{b1}-{b2}-{SECRET_SALT}"
-        checksum = hashlib.md5(raw.encode()).hexdigest()[:4].upper()
-        key = f"CLEAN-{b1}-{b2}-{checksum}"
-
-        await interaction.followup.send(
-            f"🔑 **Generated License Key:**\n`{key}`",
-            ephemeral=True
-        )
-        log.info("Generated key successfully")
-    except Exception:
-        log.exception("Error sa /generate")
-        try:
-            await interaction.followup.send("❌ May error. Subukan ulit.", ephemeral=True)
-        except Exception:
-            log.exception("Hindi ma-send ang error message")
-
-
-@client.tree.error
-async def on_app_command_error(
-    interaction: discord.Interaction,
-    error: app_commands.AppCommandError
-):
-    log.error(f"App command error: {error}")
-    try:
-        if interaction.response.is_done():
-            await interaction.followup.send("❌ May error sa command.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ May error sa command.", ephemeral=True)
-    except Exception:
-        log.exception("Error handler failed")
-
-
-if __name__ == "__main__":
-    if not DISCORD_TOKEN:
-        raise RuntimeError(
-            "DISCORD_TOKEN environment variable is missing. "
-            "Add it in Render Dashboard -> Environment."
-        )
-    start_health_server()   # ✅ FIX 2: buksan ang port bago mag-login ang bot
-    client.run(DISCORD_TOKEN)
+keep_alive()
+bot.run(os.environ.get("DISCORD_TOKEN"))
