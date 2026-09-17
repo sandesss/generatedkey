@@ -61,13 +61,8 @@ SECRET_SALT = os.environ.get("SECRET_SALT")
 def generate_key():
     chars = string.ascii_uppercase + string.digits
 
-    b1 = "".join(
-        random.choices(chars, k=6)
-    )
-
-    b2 = "".join(
-        random.choices(chars, k=6)
-    )
+    b1 = "".join(random.choices(chars, k=6))
+    b2 = "".join(random.choices(chars, k=6))
 
     raw = f"{b1}-{b2}-{SECRET_SALT}"
 
@@ -83,8 +78,6 @@ def generate_key():
 # ============================================================
 
 intents = discord.Intents.default()
-
-# Needed for !genkey
 intents.message_content = True
 
 bot = commands.Bot(
@@ -95,15 +88,43 @@ bot = commands.Bot(
 
 # ============================================================
 # ADMIN IDS
+#
+# You can also set ADMIN_IDS in Render.
+#
+# Example:
+# ADMIN_IDS=1550004507239256174
+#
+# Multiple admins:
+# ADMIN_IDS=123456789,987654321
 # ============================================================
 
-ADMIN_IDS = [
+DEFAULT_ADMIN_IDS = {
     1550004507239256174
-]
+}
+
+
+def load_admin_ids():
+    raw = os.environ.get("ADMIN_IDS", "").strip()
+
+    if not raw:
+        return DEFAULT_ADMIN_IDS.copy()
+
+    ids = set()
+
+    for value in raw.split(","):
+        value = value.strip()
+
+        if value.isdigit():
+            ids.add(int(value))
+
+    return ids
+
+
+ADMIN_IDS = load_admin_ids()
 
 
 # ============================================================
-# READY / COMMAND CLEANUP
+# READY
 # ============================================================
 
 @bot.event
@@ -111,55 +132,48 @@ async def on_ready():
 
     print("")
     print("============================================")
-    print("🤖 VIPCHAETOS BOT STARTING")
+    print("🤖 VIPCHAETOS BOT")
     print("============================================")
-    print(f"✅ Logged in as: {bot.user}")
-    print(f"🆔 Bot ID: {bot.user.id}")
-    print(f"🌐 Connected guilds: {len(bot.guilds)}")
+    print(f"✅ Logged in as : {bot.user}")
+    print(f"🆔 Bot ID      : {bot.user.id}")
+    print(f"🌐 Guilds      : {len(bot.guilds)}")
     print("")
 
+    print("🔐 ADMIN IDS:")
+    for admin_id in ADMIN_IDS:
+        print(f"   {admin_id}")
 
-    # ========================================================
-    # IMPORTANT:
-    #
-    # This bot uses !genkey.
-    #
-    # There should NOT be a /generate slash command.
-    #
-    # Clear old GLOBAL application commands.
-    # ========================================================
+    print("")
+
+    # --------------------------------------------------------
+    # CLEAR OLD GLOBAL SLASH COMMANDS
+    # --------------------------------------------------------
 
     try:
-
-        bot.tree.clear_commands(
-            guild=None
-        )
+        bot.tree.clear_commands(guild=None)
 
         synced = await bot.tree.sync()
 
         print(
-            f"✅ Global slash-command sync complete."
+            f"✅ Global slash commands synced: {len(synced)}"
         )
 
-        print(
-            f"   Current global commands: {len(synced)}"
-        )
-
-        for command in synced:
-            print(
-                f"   /{command.name}"
-            )
+        if synced:
+            for command in synced:
+                print(f"   /{command.name}")
+        else:
+            print("   No global slash commands.")
 
     except Exception as error:
 
         print(
-            f"❌ Global command cleanup failed: {error}"
+            f"⚠️ Global command cleanup error: {error}"
         )
 
 
-    # ========================================================
-    # CLEAR OLD GUILD COMMANDS
-    # ========================================================
+    # --------------------------------------------------------
+    # CLEAR OLD GUILD SLASH COMMANDS
+    # --------------------------------------------------------
 
     for guild in bot.guilds:
 
@@ -178,30 +192,24 @@ async def on_ready():
             )
 
             print(
-                f"✅ Guild commands cleared:"
-                f" {guild.name}"
-                f" ({guild.id})"
-                f" -> {len(synced)} commands"
+                f"✅ Guild commands cleared: "
+                f"{guild.name} ({guild.id})"
             )
 
         except Exception as error:
 
             print(
-                f"❌ Could not clear guild commands "
-                f"for {guild.id}: {error}"
+                f"⚠️ Guild cleanup error "
+                f"{guild.id}: {error}"
             )
 
 
-    # ========================================================
-    # FINAL STATUS
-    # ========================================================
-
     print("")
     print("============================================")
-    print("🟢 VIPCHAETOS BOT READY")
+    print("🟢 BOT READY")
     print("============================================")
-    print("🔑 Key command: !genkey")
-    print("🚫 /generate: removed from local command tree")
+    print("🔑 Use: !genkey")
+    print("🚫 No /generate command")
     print("============================================")
     print("")
 
@@ -210,16 +218,31 @@ async def on_ready():
 # !GENKEY
 # ============================================================
 
-@bot.command(
-    name="genkey"
-)
+@bot.command(name="genkey")
 async def gen_key(ctx):
+
+    # --------------------------------------------------------
+    # ACTUAL USER ID
+    # --------------------------------------------------------
+
+    user_id = ctx.author.id
+
+    print("")
+    print("========== GENKEY REQUEST ==========")
+    print(f"👤 User       : {ctx.author}")
+    print(f"🆔 User ID    : {user_id}")
+    print(f"🔐 Admin IDs  : {sorted(ADMIN_IDS)}")
+
 
     # --------------------------------------------------------
     # ADMIN CHECK
     # --------------------------------------------------------
 
-    if ctx.author.id not in ADMIN_IDS:
+    if user_id not in ADMIN_IDS:
+
+        print("❌ RESULT     : ACCESS DENIED")
+        print("====================================")
+        print("")
 
         await ctx.send(
             "❌ Wala kang permission!",
@@ -229,11 +252,17 @@ async def gen_key(ctx):
         return
 
 
+    print("✅ RESULT     : ADMIN VERIFIED")
+
+
     # --------------------------------------------------------
     # SECRET SALT CHECK
     # --------------------------------------------------------
 
     if not SECRET_SALT:
+
+        print("❌ SECRET_SALT is missing!")
+        print("====================================")
 
         await ctx.send(
             "❌ SECRET_SALT hindi na-set sa Render!",
@@ -248,6 +277,8 @@ async def gen_key(ctx):
     # --------------------------------------------------------
 
     key = generate_key()
+
+    print(f"🔑 KEY GENERATED: {key}")
 
 
     # --------------------------------------------------------
@@ -280,7 +311,7 @@ async def gen_key(ctx):
             delete_after=5
         )
 
-        # Delete !genkey message if possible
+        # Delete !genkey message
         try:
 
             await ctx.message.delete()
@@ -293,7 +324,14 @@ async def gen_key(ctx):
 
             pass
 
+        print("✅ KEY SENT TO ADMIN DM")
+        print("====================================")
+        print("")
+
     except discord.Forbidden:
+
+        print("❌ Cannot DM this user.")
+        print("====================================")
 
         await ctx.send(
             "❌ Hindi kita ma-DM. "
@@ -304,8 +342,10 @@ async def gen_key(ctx):
     except discord.HTTPException as error:
 
         print(
-            f"❌ Discord HTTP error while sending key: {error}"
+            f"❌ Discord HTTP error: {error}"
         )
+
+        print("====================================")
 
         await ctx.send(
             "❌ Hindi na-send ang key.",
@@ -318,34 +358,14 @@ async def gen_key(ctx):
 # ============================================================
 
 @bot.event
-async def on_command_error(
-    ctx,
-    error
-):
+async def on_command_error(ctx, error):
 
-    # Ignore unknown prefix commands
     if isinstance(
         error,
         commands.CommandNotFound
     ):
         return
 
-
-    # Missing permission
-    if isinstance(
-        error,
-        commands.MissingPermissions
-    ):
-
-        await ctx.send(
-            "❌ Wala kang permission!",
-            delete_after=5
-        )
-
-        return
-
-
-    # Log other errors
     print(
         f"❌ Prefix command error: {error}"
     )
@@ -366,7 +386,6 @@ DISCORD_TOKEN = os.environ.get(
     "DISCORD_TOKEN"
 )
 
-
 if not DISCORD_TOKEN:
 
     raise RuntimeError(
@@ -375,7 +394,7 @@ if not DISCORD_TOKEN:
 
 
 # ============================================================
-# START BOT
+# START
 # ============================================================
 
 print("🚀 Starting Discord bot...")
